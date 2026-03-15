@@ -1,82 +1,78 @@
-# S01: Manifest Wiring & Prompt Verification — Research
+# S01: DB Foundation + Decisions + Requirements — Research
 
-**Date:** 2026-03-12
+**Date:** 2026-03-14
 
 ## Summary
 
-S01's scope is narrow and well-grounded. The critical infrastructure — parser (`parseSecretsManifest`), formatter (`formatSecretsManifest`), types (`SecretsManifest`, `SecretsManifestEntry`), path resolution (`resolveMilestoneFile(base, mid, "SECRETS")`), and prompt instructions (both `plan-milestone.md` and `guided-plan-milestone.md`) — already exist and pass 312 parser tests including a round-trip test. The remaining work is:
+S01 lays the foundation for all DB-backed context in GSD: installing `better-sqlite3`, creating the schema, building typed wrappers for decisions and requirements, creating SQL views that filter out superseded rows, and implementing graceful fallback when the native addon is unavailable.
 
-1. **Implement `getManifestStatus()`** — a new function that reads the manifest from disk, checks each entry's status against `.env`/`process.env` via existing `checkExistingEnvKeys()`, and returns a categorized status object `{ pending, collected, skipped, existing }`.
-2. **Verify prompt compliance** — prove that the plan-milestone prompt's secret forecasting instructions produce output the parser can consume. This is currently untested end-to-end (prompt → manifest file → parser round-trip).
-3. **Wire the prompt variable** — `{{secretsOutputPath}}` is already substituted in both auto-mode (`buildPlanMilestonePrompt` in auto.ts:1658-1666) and guided flow (`guided-flow.ts:614-617`). No wiring changes needed.
+The codebase already has a battle-tested pattern for optional native modules. `native-parser-bridge.ts` and `native-git-bridge.ts` both use the same `try { require('@gsd/native') } catch {}` pattern with a `loadAttempted` guard and per-function fallback. The DB module should follow this exact pattern — a `gsd-db.ts` bridge that attempts `require('better-sqlite3')` on first access, caches the result, and exposes typed wrappers. When unavailable, `isDbAvailable()` returns false, and all downstream consumers (query layer, prompt builders) fall back to the existing `inlineGsdRootFile()` path with zero code changes.
 
-The main risk is prompt compliance: the LLM might produce manifests with formatting variations the parser doesn't handle. The parser is already forgiving (defaults missing fields to empty/pending), so this risk is low. The round-trip test in `parsers.test.ts` already proves format stability.
+The decisions table maps directly from the current DECISIONS.md markdown table format: `| # | When | Scope | Decision | Choice | Rationale | Revisable? |`. Requirements have a richer structure with `### Rxxx —` headings and `- Field: value` lines under each. Neither has an existing TypeScript parser — `parseRequirementCounts()` only counts headings, and there's no `parseDecision()` at all. S01 needs to define the table schemas; S02 will build the actual markdown parsers. S01's query layer should work with pre-populated data (via direct inserts or tests) without depending on importers.
 
 ## Recommendation
 
-Implement `getManifestStatus()` in a new file or in `files.ts`, backed by `parseSecretsManifest()` + `checkExistingEnvKeys()`. Add contract tests proving:
-- `getManifestStatus()` correctly categorizes entries by status and env presence
-- A realistic LLM-style manifest (varying whitespace, missing optional fields) round-trips through `parseSecretsManifest() → formatSecretsManifest() → parseSecretsManifest()` with semantic equality
+Build three modules: `gsd-db.ts` (database lifecycle + schema), `context-store.ts` (typed query wrappers + formatters), and tests. Follow the native-parser-bridge pattern exactly for optional dependency loading. Use `optionalDependencies` in package.json (matching the existing `@gsd-build/engine-*` pattern). Place `gsd.db` at `.gsd/gsd.db` and add it to the gitignore baseline in `gitignore.ts`.
 
-No new libraries needed. No prompt changes needed — the instructions are already in place.
+Schema should use `better-sqlite3`'s sync API throughout since all prompt building is synchronous. WAL mode via `PRAGMA journal_mode=WAL` on every `openDatabase()` call. Schema versioning via a `schema_version` table with forward-only migration functions keyed by version number.
 
 ## Don't Hand-Roll
 
 | Problem | Existing Solution | Why Use It |
 |---------|------------------|------------|
-| Parse secrets manifest | `parseSecretsManifest()` in `files.ts` | Already tested with 312-test suite, handles edge cases (missing fields, invalid status) |
-| Format secrets manifest | `formatSecretsManifest()` in `files.ts` | Round-trip tested, produces canonical format |
-| Resolve manifest path | `resolveMilestoneFile(base, mid, "SECRETS")` in `paths.ts` | Handles legacy directory names, exact+prefix matching |
-| Check existing env keys | `checkExistingEnvKeys()` in `get-secrets-from-user.ts` | Checks both `.env` file and `process.env`, tested |
-| Detect destination | `detectDestination()` in `get-secrets-from-user.ts` | File-presence heuristic (vercel.json → Vercel, convex/ → Convex), tested |
-| Load file from disk | `loadFile()` in `files.ts` | Returns null on ENOENT instead of throwing |
+| SQLite access from Node.js | `better-sqlite3@12.x` | Sync API matches existing sync prompt-building code. Prebuilt binaries for Node 22 on all target platforms. 12.x is current stable. |
+| TypeScript types for better-sqlite3 | `@types/better-sqlite3@7.x` | Accurate types for Database, Statement, Transaction. Dev dependency only. |
+| Optional native module loading | `native-parser-bridge.ts` pattern | Proven `try/catch require()` with `loadAttempted` guard. Identical fallback semantics needed here. |
+| Gitignore management | `gitignore.ts` `BASELINE_PATTERNS` | Just add `".gsd/gsd.db"`, `".gsd/gsd.db-wal"`, `".gsd/gsd.db-shm"` to the existing pattern array. |
+| Test runner | Node built-in `node --test` with `resolve-ts.mjs` hook | Project standard. Custom `createTestContext()` helpers for assertions. |
 
 ## Existing Code and Patterns
 
-- `src/resources/extensions/gsd/files.ts` — Contains `parseSecretsManifest()` and `formatSecretsManifest()`. Parser uses `extractAllSections()` at H3 level and `extractBoldField()` for structured fields. `getManifestStatus()` should follow the same pure-function pattern. Also has `loadFile()` for disk I/O and `saveFile()` for atomic writes.
-- `src/resources/extensions/gsd/types.ts` (lines 121-136) — `SecretsManifestEntryStatus`, `SecretsManifestEntry`, `SecretsManifest` types already defined. The `getManifestStatus` return type is new and needs to be added here.
-- `src/resources/extensions/gsd/paths.ts` — `resolveMilestoneFile(base, mid, "SECRETS")` resolves the manifest path with legacy fallback. Already used in `auto.ts:1658` and `guided-flow.ts:614`.
-- `src/resources/extensions/gsd/auto.ts` (lines 1658-1666) — `buildPlanMilestonePrompt()` already passes `secretsOutputPath` to `loadPrompt("plan-milestone", ...)`. No changes needed.
-- `src/resources/extensions/gsd/guided-flow.ts` (lines 614-617) — Guided flow already passes `secretsOutputPath` to `loadPrompt("guided-plan-milestone", ...)`. No changes needed.
-- `src/resources/extensions/gsd/prompts/plan-milestone.md` (line 69) — Secret forecasting instructions with `{{secretsOutputPath}}` substitution. Well-structured, references the template. No changes needed.
-- `src/resources/extensions/gsd/prompts/guided-plan-milestone.md` (line 27) — Same forecasting instructions in guided variant. No changes needed.
-- `src/resources/extensions/gsd/templates/secrets-manifest.md` — Template showing expected H3 format with bold fields and numbered guidance. Parser aligns with this format.
-- `src/resources/extensions/get-secrets-from-user.ts` — `checkExistingEnvKeys()` (line 105) and `detectDestination()` (line 128) are already exported and tested. `collectOneSecret()` (line 149) has `hint` parameter but NOT `guidance` — guidance rendering is S02 scope.
-- `src/resources/extensions/gsd/tests/parsers.test.ts` (lines 1252-1500) — Comprehensive parser tests: full manifest, single-key, empty, missing fields, all status variants, invalid status fallback, and round-trip. All 312 tests pass.
-- `src/resources/extensions/gsd/tests/secure-env-collect.test.ts` — Tests for `checkExistingEnvKeys()` and `detectDestination()`. All pass.
-- `src/resources/extensions/gsd/state.ts` — `deriveState()` does not reference secrets manifests. State derivation changes are NOT needed for S01 — `getManifestStatus()` is a standalone query function, not part of the dashboard state tree.
+- `src/resources/extensions/gsd/native-parser-bridge.ts` — **Follow this pattern exactly** for optional `better-sqlite3` loading. Lazy `require()` with `loadAttempted` guard, per-function null checks, clean fallback to JS implementations. The key pattern: module-scoped `nativeModule` variable, `loadNative()` function, every public function checks `loadNative()` first.
+- `src/resources/extensions/gsd/native-git-bridge.ts` — Same pattern, second example. Uses `require("@gsd/native")` with try/catch. Exports individual functions that each call `loadNative()`.
+- `src/resources/extensions/gsd/gitignore.ts` — `BASELINE_PATTERNS` array is where `gsd.db` patterns need to be added. Has `ensureGitignore()` that handles idempotent appending.
+- `src/resources/extensions/gsd/files.ts` — `parseRequirementCounts()` at line 627 only counts requirement headings by category. No structured requirement parser exists. No decision parser exists at all. S01 doesn't need parsers (that's S02), but the schema must match the markdown structure.
+- `src/resources/extensions/gsd/auto.ts` — `inlineGsdRootFile()` at line 2492 is the function that loads entire markdown files for prompt injection. Used ~19 times across 9+ prompt builders. This is the integration point S03 will rewire, but S01's `isDbAvailable()` function is the conditional gate.
+- `src/resources/extensions/gsd/types.ts` — Core type definitions. No Decision or Requirement types exist yet — they're loaded as raw markdown strings. S01 should define `Decision` and `Requirement` interfaces here.
+- `src/resources/extensions/gsd/state.ts` — `deriveState()` uses `parseRequirementCounts()` for the state dashboard. S04 will rewire this to DB queries.
+- `src/resources/extensions/gsd/paths.ts` — `gsdRoot()` returns `.gsd/` path. `resolveGsdRootFile()` handles file resolution. The DB path should be `join(gsdRoot(basePath), 'gsd.db')`.
 
 ## Constraints
 
-- `getManifestStatus()` must be async (calls `loadFile()` and `checkExistingEnvKeys()` which do disk I/O)
-- Must import `checkExistingEnvKeys` from `../../get-secrets-from-user.ts` (relative path from gsd/ dir) — this cross-module import already has precedent in the codebase
-- Must not modify `state.ts` or `deriveState()` — the manifest status is a separate query, not dashboard state (keeps S01 changes minimal and avoids coupling)
-- The function must handle the case where no manifest file exists (return empty/null status)
-- Tests must use the existing test pattern: `node:test` with `assert/strict`, temp directories for filesystem isolation, cleanup in `finally` blocks
+- **ESM project with CJS native addon loading**: The project is `"type": "module"` but native addons use `require()` (see `native-parser-bridge.ts`). `better-sqlite3` must be loaded via `require()` or `createRequire()`, not `import()`. The existing bridges already solved this.
+- **Sync API required**: All prompt building in `auto.ts` is synchronous (no `await` for file reads after `inlineGsdRootFile()` returns). `better-sqlite3`'s sync API is a hard requirement — async alternatives like `sql.js` won't work without rewriting the entire prompt builder chain.
+- **Node 22 + arm64 darwin**: Current target is `v22.20.0 arm64 darwin`. `better-sqlite3@12.x` provides prebuilt binaries for this via `prebuild-install`. No compilation needed.
+- **Schema must be future-proof for vector search (R021)**: Decisions use auto-increment `seq` as PK; requirements use stable `id` (R001, R002...). Both must be joinable by future embedding tables. Use INTEGER and TEXT PKs respectively — no composite PKs that would complicate joins.
+- **`.gsd/gsd.db` must be gitignored**: It's derived local state. WAL auxiliary files (`-wal`, `-shm`) must also be gitignored.
+- **Test runner uses `--experimental-strip-types`**: Tests import `.ts` files directly with the `resolve-ts.mjs` hook. New test files must follow this pattern.
 
 ## Common Pitfalls
 
-- **Confusing "existing" vs "collected"** — A key can be both `status: collected` in the manifest AND present in `.env`. These are separate signals. `existing` means "currently in env right now", `collected` means "was previously collected via the tool". The `getManifestStatus` return must distinguish: `existing` (in env regardless of manifest status), `collected` (manifest says collected, may or may not be in env), `pending` (manifest says pending AND not in env), `skipped` (manifest says skipped).
-- **Import path for `checkExistingEnvKeys`** — It's in `src/resources/extensions/get-secrets-from-user.ts`, not in the gsd/ subtree. Import must use the correct relative path from wherever `getManifestStatus` lives.
-- **Manifest file might not exist** — `resolveMilestoneFile()` returns `null` when the file doesn't exist on disk. `loadFile()` returns `null` on ENOENT. Both must be handled gracefully.
-- **Env file path for `checkExistingEnvKeys`** — Needs a `.env` path. Use `resolve(base, '.env')` consistent with how `secure_env_collect` resolves it.
+- **WAL mode on in-memory databases**: `PRAGMA journal_mode=WAL` silently falls back to `memory` mode for `:memory:` databases. Tests using in-memory DBs won't actually test WAL. Use temp-file DBs in tests that verify WAL behavior specifically, but `:memory:` is fine for schema/query tests.
+- **require() in ESM modules**: Bare `require('better-sqlite3')` won't work in ESM. Must use `createRequire(import.meta.url)` or the existing pattern from native-parser-bridge which already handles this with `// eslint-disable-next-line @typescript-eslint/no-require-imports`.
+- **Schema version race conditions**: If two processes open the DB simultaneously (e.g., pi session + worktree), both might try to run migrations. Use `BEGIN IMMEDIATE` transaction for migration to get a write lock. WAL mode allows concurrent readers during this.
+- **Foreign key enforcement**: SQLite has foreign keys disabled by default. Must run `PRAGMA foreign_keys = ON` after opening if any tables use FK constraints. For S01, decisions and requirements are standalone tables, but set the pattern now for S02+ tables.
+- **TEXT vs JSON columns**: For fields like `supporting_slices` that hold arrays, use TEXT with comma-separated values or JSON. JSON would require `json_each()` for queries. Comma-separated is simpler for the S01 scope and matches the markdown format (e.g., `"M001/S03, M001/S06"`).
+- **Prepared statement caching**: `better-sqlite3` statements should be prepared once and reused, not re-prepared per call. The `db.prepare()` result should be cached at module scope or in a statement cache object.
 
 ## Open Risks
 
-- **Prompt compliance remains probabilistic** — The LLM produces the manifest, so formatting could vary. The parser is forgiving (defaults missing fields), but there's no way to guarantee 100% compliance without testing against real LLM output. The round-trip test proves the parser handles the canonical format; edge case tolerance is already tested (missing fields, invalid status). This risk is acceptably low.
-- **Cross-module import stability** — `getManifestStatus()` depends on `checkExistingEnvKeys()` from `get-secrets-from-user.ts`. If that module's exports change, this breaks. Low risk — the function is stable and already tested.
+- **`better-sqlite3` prebuilt binary freshness**: Node 22.20.0 is very recent. If `prebuild-install` doesn't have binaries for this exact Node version, it falls back to compiling from source, requiring `node-gyp` + Python + C++ compiler. This is exactly why graceful fallback (R002) is critical. Verified: `npm install better-sqlite3` succeeds on the target platform without compilation.
+- **Package distribution impact**: Adding `better-sqlite3` to `optionalDependencies` increases npm package size by ~5MB (prebuilt native addon). This is acceptable for the token savings it delivers, but worth noting.
+- **Schema evolution between S01 and S02**: S01 defines the schema for decisions and requirements only. S02 will add tables for roadmaps, plans, summaries, etc. The migration system must handle adding tables to an existing DB without data loss. Design the migration runner to handle version 1→2→3→...N upgrades.
+- **In-memory WAL verification gap**: As noted in pitfalls, in-memory DBs don't actually use WAL mode. The R020 requirement (WAL enabled) needs a file-based test to truly verify. The platform proof-of-concept confirmed WAL works on file-based DBs.
 
 ## Skills Discovered
 
 | Technology | Skill | Status |
 |------------|-------|--------|
-| Secrets management | `wshobson/agents@secrets-management` | Available (3.2K installs) — not relevant, generic secrets skill unrelated to pi TUI/GSD internals |
+| SQLite / better-sqlite3 | `martinholovsky/claude-skills-generator@sqlite database expert` | available (544 installs) |
 
-No relevant external skills found. This work is entirely internal to the GSD extension codebase.
+Low relevance — the skill is generic SQLite guidance, not specific to `better-sqlite3` patterns or GSD's architecture. The library docs from Context7 and the existing native-bridge patterns provide better guidance than a generic skill.
 
 ## Sources
 
-- Existing parser tests pass (312/312) including round-trip (source: `npx tsx src/resources/extensions/gsd/tests/parsers.test.ts`)
-- Existing `checkExistingEnvKeys` tests pass (source: `npx tsx src/resources/extensions/gsd/tests/secure-env-collect.test.ts`)
-- Prompt variables already wired in auto.ts:1658-1666 and guided-flow.ts:614-617 (source: code inspection)
-- Secret forecasting instructions present in both plan-milestone.md and guided-plan-milestone.md (source: code inspection)
+- `better-sqlite3` API: WAL mode, prepared statements, transactions (source: [Context7 better-sqlite3 docs](https://context7.com/wiselibs/better-sqlite3))
+- `better-sqlite3` current version is 12.8.0, `@types/better-sqlite3` is 7.6.13 (source: npm registry)
+- `node:sqlite` is available in Node 22 but still experimental, lacks `.pragma()` method (source: local runtime verification)
+- Platform verification: `better-sqlite3` installs and runs correctly on Node v22.20.0 arm64 darwin with 0.01ms avg query latency (source: local proof-of-concept)

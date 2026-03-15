@@ -93,6 +93,7 @@ import {
   isInAutoWorktree,
   getAutoWorktreePath,
   getAutoWorktreeOriginalBase,
+  mergeSliceToMilestone,
 } from "./auto-worktree.js";
 import type { GitPreferences } from "./git-service.js";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
@@ -556,10 +557,17 @@ async function mergeOrphanedSliceBranches(
       "info",
     );
     try {
-      switchToMain(base);
-      const mergeResult = mergeSliceToMain(
-        base, milestoneId, sliceId, sliceEntry.title || sliceId,
-      );
+      let mergeResult;
+      if (isInAutoWorktree(base)) {
+        mergeResult = mergeSliceToMilestone(
+          base, milestoneId, sliceId, sliceEntry.title || sliceId,
+        );
+      } else {
+        switchToMain(base);
+        mergeResult = mergeSliceToMain(
+          base, milestoneId, sliceId, sliceEntry.title || sliceId,
+        );
+      }
       ctx.ui.notify(
         `Merged orphaned branch ${mergeResult.branch} → ${mainBranch}.`,
         "info",
@@ -1618,10 +1626,17 @@ async function dispatchNextUnit(
         if (sliceEntry?.done) {
           try {
             const sliceTitleForMerge = sliceEntry.title || branchSid;
-            switchToMain(basePath);
-            const mergeResult = mergeSliceToMain(
-              basePath, branchMid, branchSid, sliceTitleForMerge,
-            );
+            let mergeResult;
+            if (isInAutoWorktree(basePath)) {
+              mergeResult = mergeSliceToMilestone(
+                basePath, branchMid, branchSid, sliceTitleForMerge,
+              );
+            } else {
+              switchToMain(basePath);
+              mergeResult = mergeSliceToMain(
+                basePath, branchMid, branchSid, sliceTitleForMerge,
+              );
+            }
             const targetBranch = getMainBranch(basePath);
             ctx.ui.notify(
               `Merged ${mergeResult.branch} → ${targetBranch}.`,
