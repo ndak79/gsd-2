@@ -14,7 +14,7 @@ import { deriveState } from "./state.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
 import { GSDVisualizerOverlay } from "./visualizer-overlay.js";
 import { showQueue, showDiscuss } from "./guided-flow.js";
-import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode, stopAutoRemote } from "./auto.js";
+import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode, stopAutoRemote, dispatchDirectPhase } from "./auto.js";
 import { resolveProjectRoot } from "./worktree.js";
 import { appendCapture, hasPendingCaptures, loadPendingCaptures } from "./captures.js";
 import {
@@ -69,11 +69,11 @@ function projectRoot(): string {
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|quick|capture|triage|history|undo|skip|export|cleanup|mode|prefs|config|hooks|run-hook|skill-health|doctor|forensics|migrate|remote|steer|knowledge",
+    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|quick|capture|triage|dispatch|history|undo|skip|export|cleanup|mode|prefs|config|hooks|run-hook|skill-health|doctor|forensics|migrate|remote|steer|knowledge",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
         "help", "next", "auto", "stop", "pause", "status", "visualize", "queue", "quick", "discuss",
-        "capture", "triage",
+        "capture", "triage", "dispatch",
         "history", "undo", "skip", "export", "cleanup", "mode", "prefs",
         "config", "hooks", "run-hook", "skill-health", "doctor", "forensics", "migrate", "remote", "steer", "inspect", "knowledge",
       ];
@@ -163,6 +163,13 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         }
 
         return [];
+      }
+
+      if (parts[0] === "dispatch" && parts.length <= 2) {
+        const phasePrefix = parts[1] ?? "";
+        return ["research", "plan", "execute", "complete", "reassess", "uat", "replan"]
+          .filter((cmd) => cmd.startsWith(phasePrefix))
+          .map((cmd) => ({ value: `dispatch ${cmd}`, label: cmd }));
       }
 
       return [];
@@ -385,6 +392,16 @@ Examples:
 
       if (trimmed === "remote" || trimmed.startsWith("remote ")) {
         await handleRemote(trimmed.replace(/^remote\s*/, "").trim(), ctx, pi);
+        return;
+      }
+
+      if (trimmed === "dispatch" || trimmed.startsWith("dispatch ")) {
+        const phase = trimmed.replace(/^dispatch\s*/, "").trim();
+        if (!phase) {
+          ctx.ui.notify("Usage: /gsd dispatch <phase>  (research|plan|execute|complete|reassess|uat|replan)", "warning");
+          return;
+        }
+        await dispatchDirectPhase(ctx, pi, phase, projectRoot());
         return;
       }
 

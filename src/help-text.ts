@@ -31,6 +31,25 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     '',
     'Compare with --continue (-c) which always resumes the most recent session.',
   ].join('\n'),
+
+  headless: [
+    'Usage: gsd headless [flags] [command] [args...]',
+    '',
+    'Run /gsd commands without the TUI. Default command: auto',
+    '',
+    'Flags:',
+    '  --timeout N     Overall timeout in ms (default: 300000)',
+    '  --json          JSONL event stream to stdout',
+    '  --model ID      Override model',
+    '',
+    'Examples:',
+    '  gsd headless                    Run /gsd auto',
+    '  gsd headless next               Run one unit',
+    '  gsd headless --json status      Machine-readable status',
+    '  gsd headless --timeout 60000    With 1-minute timeout',
+    '',
+    'Exit codes: 0 = complete, 1 = error/timeout, 2 = blocked',
+  ].join('\n'),
 }
 
 export function printHelp(version: string): void {
@@ -51,6 +70,7 @@ export function printHelp(version: string): void {
   process.stdout.write('  config                   Re-run the setup wizard\n')
   process.stdout.write('  update                   Update GSD to the latest version\n')
   process.stdout.write('  sessions                 List and resume a past session\n')
+  process.stdout.write('  headless [cmd] [args]    Run /gsd commands without TUI (default: auto)\n')
   process.stdout.write('\nRun gsd <subcommand> --help for subcommand-specific help.\n')
 }
 

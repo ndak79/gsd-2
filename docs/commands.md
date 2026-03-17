@@ -69,6 +69,42 @@
 |------|-------------|
 | `gsd` | Start a new interactive session |
 | `gsd --continue` (`-c`) | Resume the most recent session for the current directory |
+| `gsd --model <id>` | Override the default model for this session |
+| `gsd --print "msg"` (`-p`) | Single-shot prompt mode (no TUI) |
+| `gsd --mode <text\|json\|rpc\|mcp>` | Output mode for non-interactive use |
+| `gsd --list-models [search]` | List available models and exit |
 | `gsd sessions` | Interactive session picker — list all saved sessions for the current directory and choose one to resume |
 | `gsd --debug` | Enable structured JSONL diagnostic logging for troubleshooting dispatch and state issues |
 | `gsd config` | Re-run the setup wizard (LLM provider + tool keys) |
+| `gsd update` | Update GSD to the latest version |
+
+## Headless Mode
+
+`gsd headless` runs `/gsd` commands without a TUI — designed for CI, cron jobs, and scripted automation. It spawns a child process in RPC mode, auto-responds to interactive prompts, detects completion, and exits with meaningful exit codes.
+
+```bash
+# Run auto mode (default)
+gsd headless
+
+# Run a single unit
+gsd headless next
+
+# Machine-readable output
+gsd headless --json status
+
+# With timeout for CI
+gsd headless --timeout 600000 auto
+
+# Force a specific phase
+gsd headless dispatch plan
+```
+
+| Flag | Description |
+|------|-------------|
+| `--timeout N` | Overall timeout in milliseconds (default: 300000 / 5 min) |
+| `--json` | Stream all events as JSONL to stdout |
+| `--model ID` | Override the model for the headless session |
+
+**Exit codes:** `0` = complete, `1` = error or timeout, `2` = blocked.
+
+Any `/gsd` subcommand works as a positional argument — `gsd headless status`, `gsd headless doctor`, `gsd headless dispatch execute`, etc.

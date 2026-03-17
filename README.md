@@ -221,6 +221,26 @@ gsd
 
 Both terminals read and write the same `.gsd/` files on disk. Your decisions in terminal 2 are picked up automatically at the next phase boundary — no need to stop auto mode.
 
+### Headless mode — CI and scripts
+
+`gsd headless` runs any `/gsd` command without a TUI. Designed for CI pipelines, cron jobs, and scripted automation.
+
+```bash
+# Run auto mode in CI
+gsd headless --timeout 600000
+
+# One unit at a time (cron-friendly)
+gsd headless next
+
+# Machine-readable status
+gsd headless --json status
+
+# Force a specific pipeline phase
+gsd headless dispatch plan
+```
+
+Headless auto-responds to interactive prompts, detects completion, and exits with structured codes: `0` complete, `1` error/timeout, `2` blocked. Pair with [remote questions](./docs/remote-questions.md) to route decisions to Slack or Discord when human input is needed.
+
 ### First launch
 
 On first run, GSD launches a branded setup wizard that walks you through LLM provider selection (OAuth or API key), then optional tool API keys (Brave Search, Context7, Jina, Slack, Discord). Every step is skippable — press Enter to skip any. If you have an existing Pi installation, your provider credentials (LLM and tool keys) are imported automatically. Run `gsd config` anytime to re-run the wizard.
@@ -254,6 +274,8 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `Ctrl+Alt+V`            | Toggle voice transcription                                      |
 | `Ctrl+Alt+B`            | Show background shell processes                                 |
 | `gsd config`            | Re-run the setup wizard (LLM provider + tool keys)              |
+| `gsd update`            | Update GSD to the latest version                                |
+| `gsd headless [cmd]`    | Run `/gsd` commands without TUI (CI, cron, scripts)             |
 | `gsd --continue` (`-c`) | Resume the most recent session for the current directory        |
 | `gsd sessions`          | Interactive session picker — browse and resume any saved session |
 
@@ -483,6 +505,7 @@ GSD is a TypeScript application that embeds the Pi coding agent SDK.
 gsd (CLI binary)
   └─ loader.ts          Sets PI_PACKAGE_DIR, GSD env vars, dynamic-imports cli.ts
       └─ cli.ts         Wires SDK managers, loads extensions, starts InteractiveMode
+          ├─ headless.ts     Headless orchestrator (spawns RPC child, auto-responds, detects completion)
           ├─ onboarding.ts   First-run setup wizard (LLM provider + tool keys)
           ├─ wizard.ts       Env hydration from stored auth.json credentials
           ├─ app-paths.ts    ~/.gsd/agent/, ~/.gsd/sessions/, auth.json
