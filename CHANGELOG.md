@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.49.0] - 2026-03-25
+
+### Added
+- add --yolo flag to /gsd auto for non-interactive project init
+
+### Fixed
+- use full git log in merge tests to match trailer-based milestone IDs
+- update parallel-merge test assertion for new trailer format
+- clarify regex alternation in test assertion
+- verdict gate accepts PARTIAL for mixed/human-experience/live-runtime UATs
+
+### Changed
+- move GSD metadata from commit subject scopes to git trailers
+
 ## [2.48.0] - 2026-03-25
 
 ### Added
@@ -1865,7 +1879,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.48.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.49.0...HEAD
+[2.49.0]: https://github.com/gsd-build/gsd-2/compare/v2.48.0...v2.49.0
 [2.48.0]: https://github.com/gsd-build/gsd-2/compare/v2.47.0...v2.48.0
 [2.47.0]: https://github.com/gsd-build/gsd-2/compare/v2.46.1...v2.47.0
 [2.46.1]: https://github.com/gsd-build/gsd-2/compare/v2.46.0...v2.46.1
