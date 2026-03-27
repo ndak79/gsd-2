@@ -44,3 +44,12 @@ export {
   formatGenericEvent,
   formatEvent,
 } from './event-formatter.js';
+export {
+  escapeXml,
+  generatePlist,
+  getPlistPath,
+  install as installLaunchAgent,
+  uninstall as uninstallLaunchAgent,
+  status as launchAgentStatus,
+} from './launchd.js';
+export type { PlistOptions, LaunchdStatus, RunCommandFn } from './launchd.js';
