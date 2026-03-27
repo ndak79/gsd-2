@@ -440,11 +440,12 @@ describe('ChannelManager', () => {
 describe('buildCommands', () => {
   it('returns array with correct command names', () => {
     const commands = buildCommands();
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 4);
     const names = commands.map((c) => c.name);
     assert.ok(names.includes('gsd-status'), 'should include gsd-status');
     assert.ok(names.includes('gsd-start'), 'should include gsd-start');
     assert.ok(names.includes('gsd-stop'), 'should include gsd-stop');
+    assert.ok(names.includes('gsd-verbose'), 'should include gsd-verbose');
   });
 
   it('each command has a description', () => {

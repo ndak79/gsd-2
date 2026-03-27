@@ -9,6 +9,8 @@ export type {
   ProjectInfo,
   ProjectMarker,
   StartSessionOptions,
+  FormattedEvent,
+  VerbosityLevel,
 } from './types.js';
 export { MAX_EVENTS, INIT_TIMEOUT_MS } from './types.js';
 export { resolveConfigPath, loadConfig, validateConfig } from './config.js';
@@ -22,3 +24,21 @@ export type { DiscordBotOptions } from './discord-bot.js';
 export { ChannelManager, sanitizeChannelName } from './channel-manager.js';
 export type { ChannelManagerOptions } from './channel-manager.js';
 export { buildCommands, formatSessionStatus, registerGuildCommands } from './commands.js';
+export { EventBridge } from './event-bridge.js';
+export type { BridgeClient, EventBridgeOptions } from './event-bridge.js';
+export { MessageBatcher } from './message-batcher.js';
+export type { SendPayload, SendFn, BatcherLogger, BatcherOptions } from './message-batcher.js';
+export { VerbosityManager, shouldShowAtLevel } from './verbosity.js';
+export {
+  formatToolStart,
+  formatToolEnd,
+  formatMessage,
+  formatBlocker,
+  formatCompletion,
+  formatError,
+  formatCostUpdate,
+  formatSessionStarted,
+  formatTaskTransition,
+  formatGenericEvent,
+  formatEvent,
+} from './event-formatter.js';

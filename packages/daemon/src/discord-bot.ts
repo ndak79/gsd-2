@@ -13,11 +13,12 @@ import {
   type Interaction,
   type Guild,
 } from 'discord.js';
-import type { DaemonConfig } from './types.js';
+import type { DaemonConfig, VerbosityLevel } from './types.js';
 import type { Logger } from './logger.js';
 import type { SessionManager } from './session-manager.js';
 import { ChannelManager } from './channel-manager.js';
 import { buildCommands, registerGuildCommands, formatSessionStatus } from './commands.js';
+import type { EventBridge } from './event-bridge.js';
 
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for testability
@@ -67,6 +68,7 @@ export class DiscordBot {
   private client: Client | null = null;
   private destroyed = false;
   private channelManager: ChannelManager | null = null;
+  private eventBridge: EventBridge | null = null;
 
   private readonly config: NonNullable<DaemonConfig['discord']>;
   private readonly logger: Logger;
@@ -171,6 +173,22 @@ export class DiscordBot {
     return this.channelManager;
   }
 
+  /**
+   * Return the underlying discord.js Client, or null if not logged in.
+   * Used by Daemon to pass to EventBridge as BridgeClient.
+   */
+  getClient(): Client | null {
+    return this.client;
+  }
+
+  /**
+   * Set the EventBridge reference so the bot can dispatch /gsd-verbose commands.
+   * Called by Daemon after creating the EventBridge.
+   */
+  setEventBridge(bridge: EventBridge): void {
+    this.eventBridge = bridge;
+  }
+
   // ---------------------------------------------------------------------------
   // Private: interaction handling
   // ---------------------------------------------------------------------------
@@ -212,6 +230,25 @@ export class DiscordBot {
           });
         });
         break;
+      case 'gsd-verbose': {
+        if (!this.eventBridge) {
+          interaction.reply({ content: 'Event bridge not available.', ephemeral: true }).catch((err) => {
+            this.logger.warn('gsd-verbose reply failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+          break;
+        }
+        const level = (interaction.options.getString('level') ?? 'default') as VerbosityLevel;
+        const channelId = interaction.channelId;
+        this.eventBridge.getVerbosityManager().setLevel(channelId, level);
+        interaction.reply({ content: `Verbosity set to **${level}** for this channel.`, ephemeral: true }).catch((err) => {
+          this.logger.warn('gsd-verbose reply failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+        break;
+      }
       default:
         interaction.reply({ content: 'Unknown command', ephemeral: true }).catch((err) => {
           this.logger.warn('unknown command reply failed', {

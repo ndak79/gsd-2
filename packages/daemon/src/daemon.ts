@@ -3,6 +3,7 @@ import type { Logger } from './logger.js';
 import { SessionManager } from './session-manager.js';
 import { scanForProjects } from './project-scanner.js';
 import { DiscordBot, validateDiscordConfig } from './discord-bot.js';
+import { EventBridge } from './event-bridge.js';
 
 /**
  * Core daemon class — ties config + logger together with lifecycle management.
@@ -15,6 +16,7 @@ export class Daemon {
   private readonly onSigint: () => void;
   private sessionManager: SessionManager | undefined;
   private discordBot: DiscordBot | undefined;
+  private eventBridge: EventBridge | undefined;
 
   constructor(
     private readonly config: DaemonConfig,
@@ -51,6 +53,25 @@ export class Daemon {
           sessionManager: this.sessionManager,
         });
         await this.discordBot.login();
+
+        // Wire up EventBridge after bot is ready
+        const channelManager = this.discordBot.getChannelManager();
+        const client = this.discordBot.getClient();
+        if (channelManager && client) {
+          this.eventBridge = new EventBridge({
+            sessionManager: this.sessionManager,
+            channelManager,
+            client,
+            config: this.config,
+            logger: this.logger,
+            ownerId: this.config.discord.owner_id,
+          });
+          this.discordBot.setEventBridge(this.eventBridge);
+          this.eventBridge.start();
+          this.logger.info('event bridge wired');
+        } else {
+          this.logger.warn('event bridge skipped — channel manager or client not available');
+        }
       } catch (err) {
         // Log error but don't abort daemon startup — bot is optional
         this.logger.error('discord bot login failed', {
@@ -74,6 +95,11 @@ export class Daemon {
     return this.sessionManager;
   }
 
+  /** Accessor for the event bridge (available after start() with Discord configured). */
+  getEventBridge(): EventBridge | undefined {
+    return this.eventBridge;
+  }
+
   /** Idempotent shutdown: log, cleanup sessions, close logger, exit. */
   async shutdown(): Promise<void> {
     if (this.shuttingDown) return;
@@ -89,6 +115,12 @@ export class Daemon {
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = undefined;
+    }
+
+    // Stop EventBridge before Discord bot destroy
+    if (this.eventBridge) {
+      await this.eventBridge.stop();
+      this.eventBridge = undefined;
     }
 
     // Destroy Discord bot before session cleanup

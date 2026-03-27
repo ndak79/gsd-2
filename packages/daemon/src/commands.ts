@@ -35,6 +35,21 @@ export function buildCommands(): RESTPostAPIChatInputApplicationCommandsJSONBody
       .setName('gsd-stop')
       .setDescription('Stop a running GSD session')
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName('gsd-verbose')
+      .setDescription('Set event verbosity level for this channel')
+      .addStringOption((option) =>
+        option
+          .setName('level')
+          .setDescription('Verbosity level')
+          .setRequired(false)
+          .addChoices(
+            { name: 'default', value: 'default' },
+            { name: 'verbose', value: 'verbose' },
+            { name: 'quiet', value: 'quiet' },
+          ),
+      )
+      .toJSON(),
   ];
 }
 
